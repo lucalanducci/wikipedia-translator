@@ -37,9 +37,11 @@ class WikipediaTranslator:
                 "nota": "Molti link a premi/festival/attori hanno nomi diversi o disambigua diversa in italiano - rimuovere '(actor)' e simili"
             },
             "categorie": {
-                "auto_generate": "Il template {{Bio}} genera automaticamente le categorie",
-                "non_aggiungere": "NON aggiungere manualmente: Persone viventi, Registe, Studenti, Nati negli anni X",
-                "il_template_crea": "{{Bio}} crea categorie da: Nazionalità, Attività, Università, Epoca, Sesso"
+                "bio_auto": "Il template {{Bio}} genera automaticamente le categorie",
+                "bio_no_manuali": "Per persone ({{Bio}}): NON aggiungere manualmente categorie",
+                "film_manuali": "Per film ({{Film}}): le categorie vanno aggiunte MANUALMENTE",
+                "verifica_categorie": "VERIFICARE SEMPRE che le categorie esistono in italiano Wikipedia prima di aggiungerle",
+                "categoria_film": "Categorie film da verificare: Film italiani del YYYY, Film drammatici, Film diretti da [regista], etc"
             },
             "sezione_note": {
                 "intestazione": "== Note ==",
@@ -61,7 +63,8 @@ class WikipediaTranslator:
                 "parametri_comuni": "titolo originale, lingua originale, durata, attori, doppiatori italiani, fotografo, montatore, musicista",
                 "immagine": "Se il link è da Wikipedia (wikipedia.org) NON mettere l'immagine nell'infobox",
                 "film_italiano": "Se il film è italiano, il titolo è già in italiano - NON aggiungere titolo originale",
-                "cast_integrato": "Per film italiani, il cast si integra nel testo principale, NON in una sezione separata"
+                "cast_integrato": "Per film italiani, il cast si integra nel testo principale, NON in una sezione separata",
+                "categorie_film": "Aggiungere categorie: [[Categoria:Film italiani del YYYY]], [[Categoria:Film drammatici italiani]], [[Categoria:Film diretti da [regista]]]"
             },
             "bio_nazionalita": {
                 "regola": "{{Bio}} ha un elenco predefinito di nazionalità - usare solo quelle riconosciute",
