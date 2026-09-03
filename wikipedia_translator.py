@@ -59,7 +59,9 @@ class WikipediaTranslator:
                 "template": "Usa {{Film}} per i film, non {{Infobox film}}",
                 "parametri_obbligatori": "titolo, paese, anno uscita, genere, regista",
                 "parametri_comuni": "titolo originale, lingua originale, durata, attori, doppiatori italiani, fotografo, montatore, musicista",
-                "immagine": "Se il link è da Wikipedia (wikipedia.org) NON mettere l'immagine nell'infobox"
+                "immagine": "Se il link è da Wikipedia (wikipedia.org) NON mettere l'immagine nell'infobox",
+                "film_italiano": "Se il film è italiano, il titolo è già in italiano - NON aggiungere titolo originale",
+                "cast_integrato": "Per film italiani, il cast si integra nel testo principale, NON in una sezione separata"
             },
             "bio_nazionalita": {
                 "regola": "{{Bio}} ha un elenco predefinito di nazionalità - usare solo quelle riconosciute",
