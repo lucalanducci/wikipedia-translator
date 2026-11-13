@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-Wikipedia English to Italian Translator
+Wikipedia English to Italian Translator with Claude AI
 Maintains Italian Wikipedia conventions and templates
 """
 
 import re
 import requests
+import os
+import json
 from typing import Dict, List, Tuple
+from anthropic import Anthropic
 
 class WikipediaTranslator:
     """Traduttore di articoli Wikipedia dall'inglese all'italiano"""
 
     def __init__(self):
+        self.client = Anthropic()
+        self.model = "claude-opus-5"
         self.rules = {
             "bio_template": {
                 "description": "Usa {{Bio}} per le persone in italiano, non {{Infobox persona}}",
@@ -100,16 +105,26 @@ class WikipediaTranslator:
             "rvprop": "content",
             "format": "json"
         }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
 
-        response = requests.get(url, params=params)
-        data = response.json()
-        pages = data.get("query", {}).get("pages", {})
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            pages = data.get("query", {}).get("pages", {})
 
-        for page_id, page_data in pages.items():
-            revisions = page_data.get("revisions", [])
-            if revisions:
-                return revisions[0]["*"]
-        return ""
+            for page_id, page_data in pages.items():
+                if "missing" in page_data:
+                    return ""
+                revisions = page_data.get("revisions", [])
+                if revisions:
+                    return revisions[0]["*"]
+            return ""
+        except Exception as e:
+            print(f"Errore nel fetching: {e}")
+            return ""
 
     def extract_infobox(self, wiki_markup: str) -> Tuple[str, int, int]:
         """Estrae l'infobox dal markup wiki"""
@@ -138,6 +153,22 @@ class WikipediaTranslator:
 
         for en_field, it_field in field_mapping.items():
             bio = re.sub(en_field, it_field, bio, flags=re.IGNORECASE)
+
+        # Rimuovi parametri non validi per Bio
+        invalid_params = [
+            r"\|\s*birth_name\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*death_date\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*death_place\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*education\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*years_active\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*known_for\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*notable_works\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*spouse\s*=.*?(?=\n\||\n\}\})",
+            r"\|\s*website\s*=.*?(?=\n\||\n\}\})",
+        ]
+
+        for param in invalid_params:
+            bio = re.sub(param, "", bio, flags=re.IGNORECASE | re.DOTALL)
 
         # Rimuovi LuogoNascitaLink se uguale a LuogoNascita
         bio = self._remove_duplicate_luogo_nascita_link(bio)
@@ -239,6 +270,165 @@ class WikipediaTranslator:
 
         return result
 
+    def translate_with_claude(self, text: str, context: str = "") -> str:
+        """Usa Claude per tradurre testo da inglese a italiano"""
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=2000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""Traduci questo testo da Wikipedia dall'inglese all'italiano, mantenendo la formattazione wiki (wikilink, grassetto, corsivo):
+
+{text}
+
+{f'Contesto: {context}' if context else ''}
+
+Rispondi SOLO con il testo tradotto, senza spiegazioni."""
+                    }
+                ]
+            )
+            return message.content[0].text.strip()
+        except Exception as e:
+            print(f"Errore Claude traduzione: {e}")
+            return text
+
+    def extract_bio_info_with_claude(self, opening_text: str, page_title: str) -> Dict:
+        """Usa Claude per estrarre info per template Bio"""
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=1000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""Dalla descrizione di "{page_title}", estrai in JSON:
+- nazionalita (es: "statunitense")
+- attivita (es: "regista", "produttore", "attore")
+- anno_nascita (numero, es: 1962)
+- post_nazionalita (descrizione breve della persona in italiano)
+
+Testo:
+{opening_text}
+
+Rispondi SOLO con JSON valido."""
+                    }
+                ]
+            )
+            try:
+                return json.loads(message.content[0].text)
+            except:
+                return {}
+        except Exception as e:
+            print(f"Errore Claude Bio extraction: {e}")
+            return {}
+
+    def verify_wikilinks_with_claude(self, text: str) -> str:
+        """Usa Claude per verificare e correggere wikilink al formato italiano"""
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=2000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""Verifica i wikilink in questo testo wiki. Per ogni link:
+- Se è un nome di attore/regista con "(actor)" o "(director)", rimuovi
+- Se è un premio/festival, usa il nome italiano corretto
+- Se è un'università, assicurati sia nel formato "Università di [città]"
+
+Testo:
+{text}
+
+Rispondi SOLO con il testo corretto."""
+                    }
+                ]
+            )
+            return message.content[0].text.strip()
+        except Exception as e:
+            print(f"Errore Claude wikilink: {e}")
+            return text
+
+    def suggest_categories_with_claude(self, page_title: str, occupation: str, nationality: str) -> List[str]:
+        """Usa Claude per suggerire categorie italiane"""
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=500,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""Per una persona italiana Wikipedia con:
+- Nome: {page_title}
+- Nazionalità: {nationality}
+- Attività: {occupation}
+
+Suggerisci 3-4 categorie italiane appropriate (formato: [[Categoria:...]]).
+Rispondi SOLO con le categorie, una per riga."""
+                    }
+                ]
+            )
+            cats = message.content[0].text.strip().split('\n')
+            return [c.strip() for c in cats if c.strip()]
+        except Exception as e:
+            print(f"Errore Claude categories: {e}")
+            return []
+
+    def translate_page(self, page_title: str, use_claude: bool = True) -> str:
+        """Traduce una pagina Wikipedia dall'inglese all'italiano"""
+        # Fetch pagina inglese
+        wiki_markup = self.fetch_wikipedia_page(page_title, lang="en")
+        if not wiki_markup:
+            return f"Errore: pagina '{page_title}' non trovata"
+
+        print(f"✓ Pagina caricata ({len(wiki_markup)} caratteri)")
+
+        # Estrai testo di apertura per Claude
+        opening_text = self.extract_opening_text(wiki_markup)
+
+        # Estrai infobox
+        infobox, start, end = self.extract_infobox(wiki_markup)
+
+        if infobox:
+            # Converti infobox a Bio italiano
+            bio_italiano = self.convert_infobox_to_bio(infobox)
+
+            # Sostituisci infobox originale con Bio
+            wiki_markup = wiki_markup[:start] + bio_italiano + wiki_markup[end:]
+            print("✓ Template Bio convertito")
+
+        # Applica conversioni globali
+        wiki_markup = self.convert_cite_web_to_italian(wiki_markup)
+        wiki_markup = self.fix_university_names(wiki_markup)
+        wiki_markup = self.fix_wikilinks(wiki_markup)
+        print("✓ Conversioni automatiche applicate (cite web, università, wikilink)")
+
+        # Sostituisci {{Reflist}} con <references/>
+        wiki_markup = re.sub(r"\{\{[Rr]eflist\}\}", "<references/>", wiki_markup)
+
+        # Rimuovi DEFAULTSORT (generato automaticamente da Bio)
+        wiki_markup = re.sub(r"\{\{DEFAULTSORT:[^}]+\}\}\n?", "", wiki_markup, flags=re.IGNORECASE)
+
+        # Usa Claude per miglioramenti
+        if use_claude and opening_text:
+            print("\n🤖 Claude elabora informazioni...")
+
+            # Estrai info Bio
+            bio_info = self.extract_bio_info_with_claude(opening_text, page_title)
+            if bio_info:
+                print(f"  ✓ Info Bio estratte: {bio_info}")
+
+            # Traduci testo di apertura (solo prima parte per demo)
+            first_paragraph = opening_text.split('\n\n')[0] if '\n\n' in opening_text else opening_text
+            if len(first_paragraph) < 500:  # Solo se ragionevole
+                translated = self.translate_with_claude(first_paragraph)
+                if translated and translated != first_paragraph:
+                    wiki_markup = wiki_markup.replace(first_paragraph, translated)
+                    print(f"  ✓ Paragrafo tradotto")
+
+        return wiki_markup
+
     def print_rules(self):
         """Stampa le regole applicate"""
         print("\n=== REGOLE APPLICATE ===")
@@ -249,12 +439,16 @@ class WikipediaTranslator:
 
 # Uso
 if __name__ == "__main__":
-    translator = WikipediaTranslator()
-    translator.print_rules()
+    import sys
 
-    # Esempio
-    print("\n=== ESEMPIO ===")
-    print("Per tradurre una pagina:")
-    print("1. wiki_markup = translator.fetch_wikipedia_page('Elizabeth Lo')")
-    print("2. infobox, start, end = translator.extract_infobox(wiki_markup)")
-    print("3. bio_italiano = translator.convert_infobox_to_bio(infobox)")
+    translator = WikipediaTranslator()
+
+    if len(sys.argv) > 1:
+        page_title = " ".join(sys.argv[1:])
+        print(f"Traduzione di: {page_title}\n")
+        result = translator.translate_page(page_title)
+        print(result)
+    else:
+        translator.print_rules()
+        print("\n=== UTILIZZO ===")
+        print("python wikipedia_translator.py 'Titolo Pagina'")
